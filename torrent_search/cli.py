@@ -6,6 +6,7 @@ import sys
 
 from . import __version__
 from .engine import new_session, search
+from .models import human_size
 from .output import render
 from .sources.base import all_sources
 
@@ -73,7 +74,39 @@ def _download(torrents, args) -> int:
         return 130
     sys.stderr.write("\n")
     print(f"Done -> {path}")
+    sys.stdout.flush()
+    _print_contents(path)
     return 0
+
+
+# media extensions worth pointing the user straight at
+_MEDIA_EXT = (".mp4", ".mkv", ".avi", ".m4v", ".mov", ".webm", ".ogv", ".iso",
+              ".mp3", ".flac", ".ogg", ".m4a", ".wav", ".pdf", ".epub", ".zip")
+
+
+def _print_contents(path: str, top: int = 8) -> None:
+    """List what landed on disk (largest first) so nested media is easy to find."""
+    import os
+    if os.path.isfile(path):
+        return  # the printed path already is the file
+    files = []
+    for root, _dirs, names in os.walk(path):
+        for n in names:
+            fp = os.path.join(root, n)
+            try:
+                files.append((os.path.getsize(fp), os.path.relpath(fp, path)))
+            except OSError:
+                pass
+    if not files:
+        return
+    files.sort(reverse=True)
+    media = [f for f in files if f[1].lower().endswith(_MEDIA_EXT)]
+    print(f"  {len(files)} files, {human_size(sum(s for s, _ in files))}:", file=sys.stderr)
+    for size, rel in (media or files)[:top]:
+        print(f"    {human_size(size):>9}  {rel}", file=sys.stderr)
+    extra = len(media or files) - top
+    if extra > 0:
+        print(f"    … and {extra} more", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
