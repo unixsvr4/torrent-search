@@ -9,6 +9,25 @@ from .bencode import parse_torrent
 from .models import Torrent
 
 
+class TorrentUnavailable(RuntimeError):
+    """The .torrent file can't be fetched (restricted, missing, etc.)."""
+
+
+def fetch_torrent_bytes(url: str, *, session: requests.Session) -> bytes:
+    """GET a .torrent file, raising a clear :class:`TorrentUnavailable` on the
+    common "exists in the index but isn't downloadable" cases."""
+    resp = session.get(url, timeout=30)
+    if resp.status_code in (401, 403):
+        raise TorrentUnavailable(
+            f"access-restricted by the host (HTTP {resp.status_code}) — this item is "
+            "stream-only / not available for download; try another result"
+        )
+    if resp.status_code == 404:
+        raise TorrentUnavailable("the .torrent file is gone (HTTP 404); try another result")
+    resp.raise_for_status()
+    return resp.content
+
+
 def build_magnet(infohash: str, name: str = "", trackers=None) -> str:
     # The xt urn must stay literal (xt=urn:btih:HASH); only dn/tr values get encoded.
     parts = [f"xt=urn:btih:{infohash.lower()}"]
@@ -33,9 +52,7 @@ def ensure_magnet(t: Torrent, *, session: requests.Session) -> str:
     if not t.torrent_url:
         raise ValueError(f"{t.name!r} has neither magnet, infohash nor torrent_url")
 
-    resp = session.get(t.torrent_url, timeout=30)
-    resp.raise_for_status()
-    meta = parse_torrent(resp.content)
+    meta = parse_torrent(fetch_torrent_bytes(t.torrent_url, session=session))
     t.infohash = meta.infohash
     if not t.trackers:
         t.trackers = meta.trackers

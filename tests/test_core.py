@@ -4,7 +4,7 @@ import unittest
 
 from torrent_search.bencode import bdecode, parse_torrent, _encode
 from torrent_search.engine import _postprocess
-from torrent_search.magnet import build_magnet
+from torrent_search.magnet import TorrentUnavailable, build_magnet, fetch_torrent_bytes
 from torrent_search.models import Torrent, human_size
 from torrent_search.output import render_csv, render_json, render_table
 from torrent_search.sources.base import all_sources, get_sources
@@ -66,6 +66,33 @@ class TestMagnet(unittest.TestCase):
         self.assertTrue(m.startswith("magnet:?xt=urn:btih:abcdef"))
         self.assertIn("dn=My%20File", m)
         self.assertIn("tr=http%3A%2F%2Ftr%2Fx", m)
+
+
+class _FakeResp:
+    def __init__(self, status, content=b""):
+        self.status_code, self.content = status, content
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError("should have been mapped to TorrentUnavailable first")
+
+
+class _FakeSession:
+    def __init__(self, status, content=b"data"):
+        self._r = _FakeResp(status, content)
+
+    def get(self, url, timeout=None):
+        return self._r
+
+
+class TestFetchTorrent(unittest.TestCase):
+    def test_ok_returns_bytes(self):
+        self.assertEqual(fetch_torrent_bytes("u", session=_FakeSession(200, b"x")), b"x")
+
+    def test_restricted_and_missing_raise_clean(self):
+        for code in (401, 403, 404):
+            with self.assertRaises(TorrentUnavailable):
+                fetch_torrent_bytes("u", session=_FakeSession(code))
 
 
 class TestPostprocess(unittest.TestCase):

@@ -21,7 +21,11 @@ class InternetArchive(Source):
 
     def search(self, query, *, limit, session):
         params = [
-            ("q", f'({query}) AND format:"Archive BitTorrent"'),
+            # format:"Archive BitTorrent" => a torrent exists; NOT access-restricted
+            # => it's actually downloadable (stream-only/emulation items 401/403 on
+            # their .torrent even though a torrent was derived).
+            ("q", f'({query}) AND format:"Archive BitTorrent" '
+                  f'AND NOT access-restricted-item:true'),
             ("fl[]", "identifier"),
             ("fl[]", "title"),
             ("fl[]", "item_size"),

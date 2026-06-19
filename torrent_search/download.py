@@ -91,10 +91,9 @@ def _import_lt():
 def _add_params(lt, t: Torrent, save_path: str, session: requests.Session):
     os.makedirs(save_path, exist_ok=True)
     if t.torrent_url:
-        resp = session.get(t.torrent_url, timeout=30)
-        resp.raise_for_status()
+        from .magnet import fetch_torrent_bytes
         atp = lt.add_torrent_params()
-        atp.ti = lt.torrent_info(lt.bdecode(resp.content))
+        atp.ti = lt.torrent_info(lt.bdecode(fetch_torrent_bytes(t.torrent_url, session=session)))
     else:
         atp = lt.parse_magnet_uri(ensure_magnet(t, session=session))
     atp.save_path = save_path

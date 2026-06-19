@@ -63,12 +63,19 @@ def _download(torrents, args) -> int:
         )
         sys.stderr.flush()
 
+    from .magnet import TorrentUnavailable
     try:
         path = download(t, args.download, session=new_session(), on_progress=show)
     except LibtorrentUnavailable as exc:
         sys.stderr.write("\n")
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    except TorrentUnavailable as exc:
+        sys.stderr.write("\n")
+        print(f"error: {exc}", file=sys.stderr)
+        if args.pick < len(torrents):
+            print(f"hint: retry with --pick {args.pick + 1}", file=sys.stderr)
+        return 4
     except KeyboardInterrupt:
         sys.stderr.write("\ninterrupted.\n")
         return 130
