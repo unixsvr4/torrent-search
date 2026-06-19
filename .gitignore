@@ -11,3 +11,9 @@ venv/
 *.torrent
 downloads/
 .DS_Store
+
+# editor swap / backup files
+*.sw[a-p]
+*~
+*.bak
+.*.swp
