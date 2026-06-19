@@ -2,16 +2,37 @@
 
 The Archive derives a BitTorrent file for every item with downloadable files
 and seeds it from its own trackers (bt1/bt2.archive.org) *with HTTP web-seeds*,
-so downloads complete reliably even when no other peers are online. We restrict
-the query to items that actually have a torrent via ``format:"Archive
-BitTorrent"``, so results are never dead links — the core fix over we-get.
+so downloads complete reliably even when no other peers are online.
+
+Query design (relevance):
+* ``format:"Archive BitTorrent"`` => a torrent exists (never a dead link).
+* ``NOT access-restricted-item:true`` => it's actually downloadable.
+* We match the query **words against the title** (AND-ed, ignoring ≤2-char
+  stopwords like "of"/"the"), then sort by ``downloads`` — so a search like
+  "night of the living dead" surfaces the actual film, not every item whose
+  full text happens to contain the word "death". If a title search finds
+  nothing, we fall back to a broader full-text match for recall.
 """
 from __future__ import annotations
+
+import re
 
 from ..models import Torrent
 from .base import Source, register
 
 SEARCH = "https://archive.org/advancedsearch.php"
+_BASE = 'format:"Archive BitTorrent" AND NOT access-restricted-item:true'
+# alphanumeric tokens (keeps "24.04", "c64", "wolfenstein-3d")
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-]*")
+_STOPWORDS = {"the", "of", "and", "a", "an", "to", "in", "for", "on", "with",
+              "at", "by", "or", "de", "la", "el"}
+
+
+def _terms(query: str) -> list[str]:
+    toks = _TOKEN.findall(query)
+    meaningful = [t for t in toks if t.lower() not in _STOPWORDS and len(t) > 1]
+    # fall back to all tokens if the query was entirely stopwords / short
+    return meaningful or toks
 
 
 @register
@@ -20,26 +41,21 @@ class InternetArchive(Source):
     label = "Internet Archive"
 
     def search(self, query, *, limit, session):
-        params = [
-            # format:"Archive BitTorrent" => a torrent exists; NOT access-restricted
-            # => it's actually downloadable (stream-only/emulation items 401/403 on
-            # their .torrent even though a torrent was derived).
-            ("q", f'({query}) AND format:"Archive BitTorrent" '
-                  f'AND NOT access-restricted-item:true'),
-            ("fl[]", "identifier"),
-            ("fl[]", "title"),
-            ("fl[]", "item_size"),
-            ("fl[]", "downloads"),
-            ("fl[]", "mediatype"),
-            ("sort[]", "downloads desc"),
-            ("rows", str(limit)),
-            ("page", "1"),
-            ("output", "json"),
-        ]
-        resp = session.get(SEARCH, params=params, timeout=25)
-        resp.raise_for_status()
+        terms = _terms(query)
+        if terms:
+            anded = " AND ".join(terms)
+            attempts = [f"title:({anded}) AND {_BASE}", f"({anded}) AND {_BASE}"]
+        else:
+            attempts = [f"({query}) AND {_BASE}"]
+
+        docs = []
+        for q in attempts:
+            docs = self._fetch(q, limit, session)
+            if docs:  # first attempt that returns anything wins
+                break
+
         out = []
-        for doc in resp.json().get("response", {}).get("docs", []):
+        for doc in docs:
             ident = doc.get("identifier")
             if not ident:
                 continue
@@ -62,6 +78,18 @@ class InternetArchive(Source):
                 )
             )
         return out
+
+    def _fetch(self, q, limit, session):
+        params = [
+            ("q", q),
+            ("fl[]", "identifier"), ("fl[]", "title"), ("fl[]", "item_size"),
+            ("fl[]", "downloads"), ("fl[]", "mediatype"),
+            ("sort[]", "downloads desc"),
+            ("rows", str(limit)), ("page", "1"), ("output", "json"),
+        ]
+        resp = session.get(SEARCH, params=params, timeout=25)
+        resp.raise_for_status()
+        return resp.json().get("response", {}).get("docs", [])
 
 
 def _int(v):

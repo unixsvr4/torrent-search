@@ -138,6 +138,18 @@ class TestPostprocess(unittest.TestCase):
         self.assertEqual([t.size_bytes for t in out], [99, 10])
 
 
+class TestIATerms(unittest.TestCase):
+    def test_drops_short_stopwords(self):
+        from torrent_search.sources.internet_archive import _terms
+        self.assertEqual(_terms("night of the living dead"),
+                         ["night", "living", "dead"])
+
+    def test_keeps_versions_and_short_tokens_when_all_short(self):
+        from torrent_search.sources.internet_archive import _terms
+        self.assertEqual(_terms("ubuntu 24.04"), ["ubuntu", "24.04"])
+        self.assertEqual(_terms("ai"), ["ai"])  # all-short -> keep everything
+
+
 class TestRegistry(unittest.TestCase):
     def test_defaults_to_all(self):
         self.assertEqual(len(get_sources(None)), len(all_sources()))

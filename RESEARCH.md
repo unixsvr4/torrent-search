@@ -108,6 +108,26 @@ Two strategies, because mirrors differ (see `sources/linux_distros.py`):
   serves landing pages (not Apache indexes) above the `iso/` level, so the version
   can't be reliably auto-discovered by scraping.
 
+#### Relevance tuning (important)
+
+IA's `advancedsearch.php` treats a bare multi-word `q=` as a loose OR across the
+**full text**, and sorting that by `downloads` floods the top with popular-but-
+irrelevant items (a search for *night of the living dead* returned Unus Annus,
+Grateful Dead shows, CIA documents…). Measured behavior:
+
+| Strategy | Result for "night of the living dead" |
+|---|---|
+| `(terms)` + `sort=downloads` | popularity wins → wrong items on top |
+| `(terms)` + relevance (no sort) | OR-matching → CIA docs, sermons |
+| full-text `"phrase"` + downloads | still polluted (Child Molester, Carnival of Souls) |
+| **`title:(w1 AND w2 …)` + `sort=downloads`** | ✅ every hit is the actual film |
+
+So the source matches query **words against the title** (AND-ed, dropping ≤2-char
+stopwords via `_terms()`), sorts by downloads, and falls back to a full-text
+`(terms)` query only when the title search returns nothing (recall safety net).
+Verified good for `night of the living dead`, `carnival of souls`, `ubuntu`,
+`turbo pascal`, `big buck bunny`.
+
 ### ❌ Rejected sources (do not re-attempt without changes)
 
 | Source | Probe | Result | Verdict |
