@@ -4,7 +4,7 @@
 Search many sources with one query, get back *live, downloadable* results, and pull
 them over BitTorrent end-to-end.
 
-[![CI](https://github.com/abdoulaw/torrent-search/actions/workflows/ci.yml/badge.svg)](https://github.com/abdoulaw/torrent-search/actions)
+[![CI](https://github.com/unixsvr4/torrent-search/actions/workflows/ci.yml/badge.svg)](https://github.com/unixsvr4/torrent-search/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A modern successor to the classic [`we-get`](https://github.com/rachmadaniHaryono/we-get),
@@ -24,7 +24,10 @@ actually downloading it for you over P2P, with an HTTP web-seed fallback so tran
 | | we-get | torrent-search |
 |---|---|---|
 | Results | scrapes piracy sites that break / 404 | live APIs; results guaranteed to have a torrent |
+| Relevance | site-dependent | query words matched against the **title** → the thing you asked for, not noise |
+| Safety | n/a | skips access-restricted / stream-only items that can't be downloaded |
 | Download | prints magnet links only | **real P2P download built in** (libtorrent) |
+| Big torrents | all-or-nothing | **preview files** + **download only what you pick** (`--list-files` / `--only`) |
 | Reliability | dead swarms stall forever | **auto web-seed fallback** → downloads complete |
 | Magnets | — | generated from the .torrent, **no libtorrent needed** |
 | Resilience | one bad site breaks the run | per-source isolation; failures are warnings |
@@ -33,7 +36,7 @@ actually downloading it for you over P2P, with an HTTP web-seed fallback so tran
 ## Install
 
 ```bash
-git clone https://github.com/abdoulaw/torrent-search.git
+git clone https://github.com/unixsvr4/torrent-search.git
 cd torrent-search
 pip install -e .                # search + magnet generation (only needs requests)
 pip install -e ".[download]"    # + libtorrent, to actually download over P2P
@@ -77,11 +80,18 @@ $ torrent-search "big buck bunny" --source archive -n 3
      https://archive.org/details/BigBuckBunny_124
  ...
 
-$ torrent-search 6a-0ddd-605c-08221 --download . --pick 1
-Downloading: 6a 0ddd 605c 08221  (616.5 KB)  [Internet Archive]
-  [##############################] 100.0%  seeding   peers=6 seeds=2  124.0 kB/s
-Done -> ./6a-0ddd-605c-08221
+$ torrent-search "big buck bunny" --download . --pick 1
+Downloading: Big Buck Bunny  (421.1 MB)  [Internet Archive]
+  [##############################] 100.0%  seeding   peers=6 seeds=2  35951.1 kB/s
+Done -> ./BigBuckBunny_124
+  12 files, 420.9 MB:
+     316.9 MB  Content/big_buck_bunny_720p_surround.avi
+      59.0 MB  Content/big_buck_bunny_720p_surround.mp4
+      44.8 MB  Content/big_buck_bunny_720p_surround.ogv
 ```
+
+When a download finishes it lists what landed (largest first, media/archive/document
+files preferred) so the playable file is obvious even when it's nested in a subfolder.
 
 ### Options
 
@@ -109,6 +119,20 @@ hands libtorrent that exact web-seed (plus the canonical redirecting URL as a fa
 so downloads complete even with zero live peers. Verified end-to-end: a real transfer
 reaches 100% and enters `seeding`.
 
+## Relevant, downloadable results
+
+The Internet Archive source is tuned so you get what you searched for:
+
+- **Title matching.** Query words are AND-ed against each item's **title** (common
+  stopwords like "of"/"the" dropped), then ranked by popularity — so
+  `night of the living dead` returns the actual public-domain film, not every item
+  whose full text happens to contain "death". If a title search comes back empty, it
+  falls back to a broader full-text match so you still get results.
+- **No dead ends.** Results are restricted to items that actually have a torrent
+  (`format:"Archive BitTorrent"`) and aren't access-restricted, so stream-only /
+  emulation items that 401 on download never show up. If one still slips through, the
+  downloader prints a clear message and suggests `--pick <next>` instead of crashing.
+
 ## Use as a library
 
 ```python
@@ -130,10 +154,10 @@ path = download(res.torrents[0], "downloads",                    # P2P download
 ```
 torrent_search/
 ├── models.py        # Torrent dataclass (normalized result)
-├── bencode.py       # tiny bencode + infohash (pure stdlib — no libtorrent)
-├── magnet.py        # build / resolve magnet URIs
+├── bencode.py       # tiny bencode + infohash + file list (pure stdlib — no libtorrent)
+├── magnet.py        # build / resolve magnet URIs; .torrent fetch + path matching
 ├── engine.py        # concurrent fan-out, dedup, filter, sort
-├── download.py      # libtorrent P2P download + IA web-seed fallback
+├── download.py      # libtorrent P2P download + IA web-seed fallback + selective files
 ├── output.py        # table / json / csv / magnet / links
 ├── cli.py
 └── sources/
@@ -172,6 +196,14 @@ TORRENT_SEARCH_SKIP_NET=1 python -m pytest   # offline unit tests
 python -m pytest                             # + live smoke tests (network)
 ruff check torrent_search
 ```
+
+## Design notes
+
+[`RESEARCH.md`](RESEARCH.md) documents the evidence behind every design choice —
+the `we-get` review, each source probed (shipped *and* rejected, with the commands
+and reasons), the libtorrent P2P validation runs, the web-seed reliability fix, and
+the relevance tuning — so the work is reproducible and contributors know what's
+already been tried.
 
 ## License
 

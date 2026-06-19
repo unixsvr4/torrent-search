@@ -122,11 +122,38 @@ Grateful Dead shows, CIA documents…). Measured behavior:
 | full-text `"phrase"` + downloads | still polluted (Child Molester, Carnival of Souls) |
 | **`title:(w1 AND w2 …)` + `sort=downloads`** | ✅ every hit is the actual film |
 
-So the source matches query **words against the title** (AND-ed, dropping ≤2-char
-stopwords via `_terms()`), sorts by downloads, and falls back to a full-text
+So the source matches query **words against the title** (AND-ed, dropping common
+stopwords — `the/of/and/a/an/to/in/for/on/with/at/by/or/de/la/el` — and 1-char
+tokens via `_terms()`), sorts by downloads, and falls back to a full-text
 `(terms)` query only when the title search returns nothing (recall safety net).
 Verified good for `night of the living dead`, `carnival of souls`, `ubuntu`,
-`turbo pascal`, `big buck bunny`.
+`turbo pascal`, `big buck bunny`; an all-stopword/short query like `ai` keeps all
+tokens so it still returns results.
+
+#### Access-restricted items
+
+Some IA items match `format:"Archive BitTorrent"` (a torrent was derived) but are
+**stream-only** — their `.torrent` returns `401`/`403` from every data node:
+```bash
+# VisiCalc 1979: collection includes 'stream_only','emulation'
+curl -s https://archive.org/metadata/VisiCalc_1979_SoftwareArts | python3 -c \
+  "import sys,json;print(json.load(sys.stdin)['metadata'].get('access-restricted-item'))"   # True
+curl -sIL https://archive.org/download/VisiCalc_1979_SoftwareArts/VisiCalc_1979_SoftwareArts_archive.torrent | head -1  # 401
+```
+Fix: add `AND NOT access-restricted-item:true` to the query so these never appear.
+Anything that still slips through is caught by `fetch_torrent_bytes()`, which maps
+`401/403/404` to a clear `TorrentUnavailable` (no raw traceback) and the CLI suggests
+`--pick <next>`.
+
+#### Multi-file items wrap media in a subfolder
+
+IA "movies"/"software" torrents nest the real files under a folder, e.g.
+`BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4`, plus per-system ROM
+sets (TOSEC) hold thousands of files. So the CLI (a) lists the downloaded files
+(largest first) on completion, and (b) supports previewing (`--list-files`, pure
+bencode — no libtorrent) and selective download (`--only PATTERN`, via libtorrent
+file priorities). Verified: `--only "Super Mario 64 (USA)"` pulled a single 6.0 MB
+file out of an 11.6 GB / 1902-file N64 TOSEC set.
 
 ### ❌ Rejected sources (do not re-attempt without changes)
 
@@ -244,8 +271,9 @@ Python 3.13.
 
 ## 7. Test strategy
 
-- `tests/test_core.py` — 17 offline unit tests (models, bencode roundtrip +
-  infohash, magnet building, engine dedup/filter/sort, registry, output). No
+- `tests/test_core.py` — 24 offline unit tests (models, bencode roundtrip +
+  infohash + file list, magnet building, path matching, restricted-item error
+  mapping, IA title tokenizer, engine dedup/filter/sort, registry, output). No
   network; run in CI with `TORRENT_SEARCH_SKIP_NET=1`.
 - `tests/test_live.py` — 3 network smoke tests (IA search returns results, magnet
   resolves to a 40-hex infohash, Linux source finds Ubuntu). Auto-skip offline.
