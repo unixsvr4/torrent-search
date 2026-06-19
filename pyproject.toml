@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torrent-search"
+version = "0.1.0"
+description = "Fast, reliable meta-search for legal torrents, with built-in peer-to-peer downloading."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "Abdoul Aw" }]
+keywords = ["torrent", "bittorrent", "p2p", "search", "magnet", "libtorrent", "internet-archive", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: File Sharing",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+dependencies = ["requests>=2.25"]
+
+[project.optional-dependencies]
+# Downloading needs libtorrent; search + magnet generation do not.
+download = ["libtorrent>=2.0"]
+dev = ["pytest>=7", "ruff>=0.1"]
+
+[project.urls]
+Homepage = "https://github.com/abdoulaw/torrent-search"
+Issues = "https://github.com/abdoulaw/torrent-search/issues"
+
+[project.scripts]
+torrent-search = "torrent_search.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["torrent_search*"]
+
+[tool.ruff]
+line-length = 100

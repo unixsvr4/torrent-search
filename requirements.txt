@@ -1,0 +1,3 @@
+requests>=2.25
+# Optional — only needed to download (not to search or make magnets):
+# libtorrent>=2.0
