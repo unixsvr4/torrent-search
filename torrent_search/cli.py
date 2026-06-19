@@ -40,7 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-d", "--download", metavar="DIR", nargs="?", const=".",
                    help="download a result over P2P into DIR (default current dir)")
     p.add_argument("--pick", type=int, default=1, metavar="N",
-                   help="with --download, which result number to fetch (default 1)")
+                   help="with --download/--list-files, which result number (default 1)")
+    p.add_argument("--list-files", action="store_true",
+                   help="preview the files inside the --pick result (sizes), then exit")
+    p.add_argument("--only", metavar="PATTERN",
+                   help="download only files matching PATTERN (glob or substring) — "
+                        "e.g. grab a few ROMs out of a huge set instead of all of it")
     p.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     p.add_argument("--list-sources", action="store_true", help="list sources and exit")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -55,6 +60,12 @@ def _download(torrents, args) -> int:
     t = torrents[args.pick - 1]
     print(f"Downloading: {t.name}  ({t.size_human})  [{t.provider}]", file=sys.stderr)
 
+    def selected(files, total):
+        print(f"  --only {args.only!r}: {len(files)} file(s), {human_size(total)} "
+              f"(skipping the rest):", file=sys.stderr)
+        for path, size in sorted(files, key=lambda f: -f[1])[:8]:
+            print(f"    {human_size(size):>9}  {path}", file=sys.stderr)
+
     def show(p: Progress):
         bar = ("#" * int(p.progress * 30)).ljust(30)
         sys.stderr.write(
@@ -65,11 +76,15 @@ def _download(torrents, args) -> int:
 
     from .magnet import TorrentUnavailable
     try:
-        path = download(t, args.download, session=new_session(), on_progress=show)
+        path = download(t, args.download, session=new_session(), on_progress=show,
+                        only=args.only, on_select=selected)
     except LibtorrentUnavailable as exc:
         sys.stderr.write("\n")
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    except ValueError as exc:  # e.g. --only matched nothing
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except TorrentUnavailable as exc:
         sys.stderr.write("\n")
         print(f"error: {exc}", file=sys.stderr)
@@ -116,6 +131,40 @@ def _print_contents(path: str, top: int = 8) -> None:
         print(f"    … and {extra} more", file=sys.stderr)
 
 
+def _list_files(torrents, args) -> int:
+    """Preview the file tree of the picked result — no libtorrent needed."""
+    from .bencode import parse_torrent
+    from .magnet import TorrentUnavailable, fetch_torrent_bytes
+    if not (1 <= args.pick <= len(torrents)):
+        print(f"error: --pick {args.pick} out of range (1..{len(torrents)})", file=sys.stderr)
+        return 2
+    t = torrents[args.pick - 1]
+    if not t.torrent_url:
+        print("error: file listing needs a .torrent source", file=sys.stderr)
+        return 2
+    try:
+        meta = parse_torrent(fetch_torrent_bytes(t.torrent_url, session=new_session()))
+    except TorrentUnavailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 4
+    files = sorted(meta.files, key=lambda f: -f[1])
+    print(f"{t.name}  —  {len(files)} files, {human_size(meta.size_bytes)} total")
+    shown = files if args.only is None else [f for f in files if _match(args.only, f[0])]
+    if args.only is not None:
+        sel = sum(s for _, s in shown)
+        print(f"  matching --only {args.only!r}: {len(shown)} files, {human_size(sel)}")
+    for path, size in shown[:50]:
+        print(f"  {human_size(size):>9}  {path}")
+    if len(shown) > 50:
+        print(f"  … and {len(shown) - 50} more (narrow with --only PATTERN)")
+    return 0
+
+
+def _match(pattern, path):
+    from .magnet import path_matches
+    return path_matches(pattern, path)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -142,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
     if not result.torrents:
         print(f"No torrents found for {query!r}.", file=sys.stderr)
         return 1
+
+    if args.list_files:
+        return _list_files(result.torrents, args)
 
     if args.download is not None:
         # Show the table first so the user knows what #pick refers to.

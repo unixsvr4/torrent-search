@@ -57,6 +57,12 @@ torrent-search sintel --magnet
 # Download result #1 over BitTorrent into ~/Downloads
 torrent-search "big buck bunny" --download ~/Downloads --pick 1
 
+# Huge multi-file torrent? Preview it first, then grab only what you want.
+torrent-search "N64 TOSEC" --list-files --pick 1                 # 1902 files, 13.4 GB
+torrent-search "N64 TOSEC" --list-files --pick 1 --only mario    # 30 files, 478 MB
+torrent-search "N64 TOSEC" --download . --pick 1 --only "Super Mario 64 (USA)"
+#   --only 'Super Mario 64 (USA)': 1 file(s), 6.0 MB (skipping the rest)
+
 # Machine-readable
 torrent-search debian --json
 torrent-search debian --csv  > debian.csv
@@ -88,7 +94,9 @@ Done -> ./6a-0ddd-605c-08221
 | `--sort seeders\|size\|name` | Ordering (default `seeders`). |
 | `--json` / `--csv` / `--magnet` / `--links` | Output format (default: table). |
 | `-d, --download DIR` | Download a result over P2P (default dir: current). |
-| `--pick N` | Which result to download (default 1). |
+| `--pick N` | Which result to download / list (default 1). |
+| `--list-files` | Preview the files inside the picked result (no download, no libtorrent). |
+| `--only PATTERN` | Download only files matching PATTERN (glob or substring) — pull a few items out of a huge set. |
 | `--list-sources` | List sources and exit. |
 
 ## How the reliable downloading works

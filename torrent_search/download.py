@@ -88,12 +88,40 @@ def _import_lt():
         ) from exc
 
 
-def _add_params(lt, t: Torrent, save_path: str, session: requests.Session):
+def _select_files(lt, ti, only: str):
+    """Return (file_priorities, [(path, size)], total_bytes) for files matching
+    ``only`` — everything else gets priority 0 so it's never downloaded."""
+    from .magnet import path_matches
+    fs = ti.files()
+    prios, selected, total = [], [], 0
+    for i in range(fs.num_files()):
+        path, size = fs.file_path(i), fs.file_size(i)
+        if path_matches(only, path):
+            prios.append(4)  # normal priority
+            selected.append((path, size))
+            total += size
+        else:
+            prios.append(0)  # do not download
+    return prios, selected, total
+
+
+def _add_params(lt, t: Torrent, save_path: str, session: requests.Session,
+                only: Optional[str] = None, on_select=None):
     os.makedirs(save_path, exist_ok=True)
     if t.torrent_url:
         from .magnet import fetch_torrent_bytes
         atp = lt.add_torrent_params()
-        atp.ti = lt.torrent_info(lt.bdecode(fetch_torrent_bytes(t.torrent_url, session=session)))
+        ti = lt.torrent_info(lt.bdecode(fetch_torrent_bytes(t.torrent_url, session=session)))
+        atp.ti = ti
+        if only:
+            prios, selected, total = _select_files(lt, ti, only)
+            if not selected:
+                raise ValueError(f"no files in this torrent match --only {only!r}")
+            atp.file_priorities = prios
+            if on_select:
+                on_select(selected, total)
+    elif only:
+        raise ValueError("--only needs a .torrent source; magnet results aren't supported yet")
     else:
         atp = lt.parse_magnet_uri(ensure_magnet(t, session=session))
     atp.save_path = save_path
@@ -109,18 +137,26 @@ def download(
     timeout: Optional[float] = 1800,
     poll: float = 1.0,
     seed: bool = False,
+    only: Optional[str] = None,
+    on_select=None,
 ) -> str:
     """Download ``t`` over BitTorrent into ``save_path`` and return the saved path.
 
     Blocks until the torrent finishes (or ``timeout`` seconds elapse, or — when
     ``seed`` is False — it reaches the seeding state). ``on_progress`` is invoked
     once per poll with a :class:`Progress` snapshot.
+
+    ``only`` selects a subset of files (glob or substring) so you can pull a few
+    items out of a huge multi-file torrent instead of the whole thing; matched
+    files are reported to ``on_select(selected, total_bytes)`` before downloading.
     """
     lt = _import_lt()
     session = session or requests.Session()
     ses = lt.session({"listen_interfaces": "0.0.0.0:6881,[::]:6881", "enable_dht": True})
 
-    handle = ses.add_torrent(_add_params(lt, t, save_path, session))
+    handle = ses.add_torrent(
+        _add_params(lt, t, save_path, session, only=only, on_select=on_select)
+    )
     # Augment with live web-seeds so completion doesn't depend on a live swarm.
     for ws in _ia_webseeds(t.torrent_url, session):
         handle.add_url_seed(ws)

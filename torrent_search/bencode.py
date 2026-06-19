@@ -61,13 +61,14 @@ def _encode(value: Any) -> bytes:
 
 
 class TorrentMeta:
-    __slots__ = ("infohash", "name", "size_bytes", "trackers")
+    __slots__ = ("infohash", "name", "size_bytes", "trackers", "files")
 
-    def __init__(self, infohash, name, size_bytes, trackers):
+    def __init__(self, infohash, name, size_bytes, trackers, files):
         self.infohash = infohash
         self.name = name
         self.size_bytes = size_bytes
         self.trackers = trackers
+        self.files = files  # list[(path:str, length:int)], '/'-joined relative paths
 
 
 def parse_torrent(data: bytes) -> TorrentMeta:
@@ -82,8 +83,14 @@ def parse_torrent(data: bytes) -> TorrentMeta:
 
     if b"length" in info:  # single-file
         size = int(info[b"length"])
+        files = [(name, size)]
     else:                  # multi-file
-        size = sum(int(f.get(b"length", 0)) for f in info.get(b"files", []))
+        files = []
+        for f in info.get(b"files", []):
+            parts = [p.decode("utf-8", "replace") for p in f.get(b"path", [])]
+            length = int(f.get(b"length", 0))
+            files.append(("/".join(parts), length))
+        size = sum(length for _, length in files)
 
     trackers = []
     if b"announce" in meta:
@@ -94,4 +101,4 @@ def parse_torrent(data: bytes) -> TorrentMeta:
             if url not in trackers:
                 trackers.append(url)
 
-    return TorrentMeta(infohash, name, size, trackers)
+    return TorrentMeta(infohash, name, size, trackers, files)

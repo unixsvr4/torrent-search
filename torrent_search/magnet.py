@@ -1,6 +1,7 @@
 """Build and resolve magnet URIs."""
 from __future__ import annotations
 
+import fnmatch
 import urllib.parse
 
 import requests
@@ -26,6 +27,15 @@ def fetch_torrent_bytes(url: str, *, session: requests.Session) -> bytes:
         raise TorrentUnavailable("the .torrent file is gone (HTTP 404); try another result")
     resp.raise_for_status()
     return resp.content
+
+
+def path_matches(pattern: str, path: str) -> bool:
+    """Case-insensitive file selector: glob if the pattern has wildcards,
+    otherwise a plain substring match (so ``--only mario`` just works)."""
+    p, fp = pattern.lower(), path.lower()
+    if any(c in p for c in "*?["):
+        return fnmatch.fnmatch(fp, p)
+    return p in fp
 
 
 def build_magnet(infohash: str, name: str = "", trackers=None) -> str:

@@ -4,7 +4,9 @@ import unittest
 
 from torrent_search.bencode import bdecode, parse_torrent, _encode
 from torrent_search.engine import _postprocess
-from torrent_search.magnet import TorrentUnavailable, build_magnet, fetch_torrent_bytes
+from torrent_search.magnet import (
+    TorrentUnavailable, build_magnet, fetch_torrent_bytes, path_matches,
+)
 from torrent_search.models import Torrent, human_size
 from torrent_search.output import render_csv, render_json, render_table
 from torrent_search.sources.base import all_sources, get_sources
@@ -53,11 +55,29 @@ class TestBencode(unittest.TestCase):
         self.assertEqual(meta.trackers, ["http://tr/announce"])
         self.assertTrue(re.fullmatch(r"[0-9a-f]{40}", meta.infohash))
 
-    def test_parse_multifile_size(self):
+    def test_parse_multifile_size_and_files(self):
         info = {b"name": b"d", b"piece length": 16384, b"pieces": b"\x00" * 20,
-                b"files": [{b"length": 10, b"path": [b"a"]},
-                           {b"length": 5, b"path": [b"b"]}]}
-        self.assertEqual(parse_torrent(_encode({b"info": info})).size_bytes, 15)
+                b"files": [{b"length": 10, b"path": [b"sub", b"a.rom"]},
+                           {b"length": 5, b"path": [b"b.rom"]}]}
+        meta = parse_torrent(_encode({b"info": info}))
+        self.assertEqual(meta.size_bytes, 15)
+        self.assertEqual(meta.files, [("sub/a.rom", 10), ("b.rom", 5)])
+
+    def test_parse_singlefile_files(self):
+        info = {b"name": b"x.iso", b"length": 7,
+                b"piece length": 16384, b"pieces": b"\x00" * 20}
+        self.assertEqual(parse_torrent(_encode({b"info": info})).files, [("x.iso", 7)])
+
+
+class TestPathMatches(unittest.TestCase):
+    def test_substring_case_insensitive(self):
+        self.assertTrue(path_matches("mario", "N64/Super Mario 64 (USA).zip"))
+        self.assertFalse(path_matches("zelda", "Super Mario 64.zip"))
+
+    def test_glob(self):
+        self.assertTrue(path_matches("*.iso", "ubuntu-24.04.iso"))
+        self.assertTrue(path_matches("super mario*usa*", "Super Mario 64 (USA).zip"))
+        self.assertFalse(path_matches("*.iso", "game.zip"))
 
 
 class TestMagnet(unittest.TestCase):
