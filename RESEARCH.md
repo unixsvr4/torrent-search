@@ -73,19 +73,40 @@ infrastructure with HTTP web-seeds.
 
 ### ✅ Official Linux distros — SHIPPED (secondary)
 
-First-party, long-lived torrent index directories scraped for `.torrent` hrefs.
+Two strategies, because mirrors differ (see `sources/linux_distros.py`):
+**scraped index dirs** (Ubuntu, Debian, Fedora) and **validated direct URLs**
+(openSUSE, whose mirror doesn't list its torrents).
 
-- **Ubuntu:** `https://releases.ubuntu.com/<ver>/`
+- **Ubuntu:** `https://releases.ubuntu.com/<ver>/`  *(scraped dir)*
   ```bash
   curl -s https://releases.ubuntu.com/24.04/ | grep -o 'ubuntu-[^"]*\.torrent' | sort -u
   # ubuntu-24.04.3-desktop-amd64.iso.torrent, ubuntu-24.04.3-live-server-amd64.iso.torrent, ...
   ```
   Version dirs (`24.04/`, `22.04/`) are stable symlinks that survive point releases.
-- **Debian:** `https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/` (and `bt-dvd/`)
+- **Debian:** `https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/` (and `bt-dvd/`)  *(scraped dir)*
   ```bash
   curl -s https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/ | grep -o 'href="[^"]*\.torrent"'
   # debian-13.5.0-amd64-netinst.iso.torrent, ...
   ```
+- **Fedora:** `https://torrent.fedoraproject.org/torrents/`  *(scraped dir)*
+  ```bash
+  # NB: https://torrent.fedoraproject.org/ 307-redirects to a landing page;
+  # the listable directory of .torrent files is /torrents/ :
+  curl -sL https://torrent.fedoraproject.org/torrents/ | grep -o 'href="[^"]*\.torrent"' | head
+  # Fedora-Budgie-Live-x86_64-44.torrent, Fedora-COSMIC-Atomic-ostree-x86_64-44.torrent, ...
+  ```
+- **openSUSE:** `https://download.opensuse.org/distribution/leap/<ver>/iso/`  *(direct URLs, HEAD-validated)*
+  ```bash
+  # Tumbleweed torrents are DISCONTINUED — DVD/NET -Current.iso.torrent return 404.
+  # Only Leap DVD images are seeded, and the iso dir does NOT list the .torrent files,
+  # so they're named explicitly and validated at query time:
+  curl -sIL https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-DVD-x86_64-Current.iso.torrent | head -1  # 200
+  curl -sIL https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Tumbleweed-DVD-x86_64-Current.iso.torrent | head -1  # 404
+  ```
+  Caveat: the Leap version (`15.6`) is a constant to bump on new releases — old Leap
+  dirs persist, so a stale value goes outdated but never 404s. `download.opensuse.org`
+  serves landing pages (not Apache indexes) above the `iso/` level, so the version
+  can't be reliably auto-discovered by scraping.
 
 ### ❌ Rejected sources (do not re-attempt without changes)
 
@@ -225,8 +246,9 @@ ruff check torrent_search
 - **Seeder counts** are not exposed by IA; we report `S:1` (IA always seeds) and
   sort IA results by `downloads`. A tracker-scrape source could provide real
   seed/leech numbers.
-- **More legal sources** worth adding: a working Academic Torrents path, OpenSUSE,
-  Fedora, Arch, Tails, and Project Gutenberg / Librivox bulk torrents.
+- **More legal sources** worth adding: a working Academic Torrents path, Arch, Tails,
+  Linux Mint (needs a non-HTML source), and Project Gutenberg / Librivox bulk torrents.
+  (Ubuntu, Debian, Fedora and openSUSE Leap are already shipped.)
 - **DHT-only / magnet-first items**: current `download()` handles magnets via
   `parse_magnet_uri`; not yet exercised by a shipped source (all current sources
   provide `.torrent` URLs).

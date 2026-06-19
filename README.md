@@ -15,8 +15,9 @@ actually downloading it for you over P2P, with an HTTP web-seed fallback so tran
 
 > **Scope / ethics.** The built-in sources are all **legal, freely-shareable content**:
 > the Internet Archive (public-domain & Creative-Commons media, open data) and official
-> Linux distribution ISOs. The source layer is pluggable, but this project ships and
-> tests only legitimate sources. Don't use it to infringe copyright.
+> Linux distribution ISOs (Ubuntu, Debian, Fedora, openSUSE). The source layer is
+> pluggable, but this project ships and tests only legitimate sources. Don't use it to
+> infringe copyright.
 
 ## What makes it better than we-get
 
@@ -130,7 +131,7 @@ torrent_search/
 └── sources/
     ├── base.py              # Source ABC + @register registry
     ├── internet_archive.py  # millions of legal torrents (real search API)
-    └── linux_distros.py     # official Ubuntu / Debian ISOs
+    └── linux_distros.py     # official Ubuntu / Debian / Fedora / openSUSE ISOs
 ```
 
 ### Adding a source
